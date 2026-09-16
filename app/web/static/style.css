@@ -5,11 +5,11 @@
 }
 
 :root {
-  --bg: #f4f5f7;
+  --bg: #f5f7fb;
   --card: #ffffff;
   --text: #1f2329;
-  --muted: #8a9099;
-  --border: #eaecef;
+  --muted: #77808d;
+  --border: #e4e8ef;
   --primary: #2f6feb;
   --primary-dark: #245ac9;
   --header: #232a34;
@@ -20,15 +20,18 @@ body {
   background: var(--bg);
   color: var(--text);
   font-size: 14px;
+  min-height: 100vh;
+  background-image: radial-gradient(circle at 20% 0, rgba(47, 111, 235, .08), transparent 28%);
 }
 
 .topbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 14px 28px;
-  background: var(--header);
+  padding: 14px 32px;
+  background: linear-gradient(110deg, #202936, var(--header));
   color: #fff;
+  box-shadow: 0 2px 14px rgba(20, 29, 42, .16);
 }
 
 .brand {
@@ -79,47 +82,73 @@ body {
 }
 
 .container {
-  max-width: 1080px;
-  margin: 24px auto;
-  padding: 0 24px;
+  width: min(1480px, 100%);
+  margin: 32px auto;
+  padding: 0 32px;
 }
 
 .toolbar {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 14px;
+  align-items: flex-end;
+  gap: 24px;
+  margin-bottom: 18px;
 }
 
 .toolbar h2 {
-  font-size: 17px;
-  font-weight: 600;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -.3px;
 }
 
-.toolbar-actions {
+.toolbar-copy p {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.toolbar-actions,
+.action-group {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
+.toolbar-actions {
+  justify-content: flex-end;
+}
+
+.action-group {
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+}
+
 .card {
   background: var(--card);
-  border-radius: 10px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, .06);
-  padding: 6px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 12px 35px rgba(27, 39, 61, .07);
+  overflow: hidden;
+}
+
+.table-scroll {
+  overflow-x: auto;
 }
 
 .tbl {
   width: 100%;
+  min-width: 1120px;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .tbl th,
 .tbl td {
   text-align: left;
-  padding: 12px 8px;
+  padding: 17px 14px;
   border-bottom: 1px solid var(--border);
   font-size: 13px;
+  vertical-align: middle;
 }
 
 .tbl tr:last-child td {
@@ -128,7 +157,56 @@ body {
 
 .tbl th {
   color: var(--muted);
-  font-weight: 500;
+  background: #f8f9fc;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .3px;
+  white-space: nowrap;
+}
+
+.tbl tbody tr {
+  transition: background .15s;
+}
+
+.tbl tbody tr:hover {
+  background: #fafcff;
+}
+
+.col-account { width: 16%; }
+.col-cookie { width: 8%; }
+.col-status { width: 18%; }
+.col-task { width: 14%; }
+.col-listen { width: 14%; }
+.col-actions { width: 30%; }
+
+.account-cell strong,
+.account-cell span,
+.task-cell span,
+.listen-cell span {
+  display: block;
+}
+
+.account-cell strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.account-cell span,
+.task-cell span + span,
+.listen-cell span + span {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.account-cell span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-cell {
+  line-height: 26px;
 }
 
 .ta-r {
@@ -137,7 +215,14 @@ body {
 
 .tbl td:last-child {
   text-align: right;
-  white-space: nowrap;
+}
+
+.tbl td.cell-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .empty {
@@ -149,16 +234,18 @@ body {
 .btn {
   border: 1px solid var(--border);
   background: #fff;
-  border-radius: 6px;
-  padding: 6px 14px;
+  border-radius: 8px;
+  padding: 8px 14px;
   cursor: pointer;
   font-size: 13px;
   color: var(--text);
-  transition: background .15s;
+  font-weight: 500;
+  transition: background .15s, border-color .15s, transform .15s;
 }
 
 .btn:hover {
   background: #f0f2f5;
+  transform: translateY(-1px);
 }
 
 .btn-primary {
@@ -172,9 +259,9 @@ body {
 }
 
 .btn-sm {
-  padding: 4px 10px;
+  padding: 5px 9px;
   font-size: 12px;
-  margin-left: 4px;
+  margin: 0;
 }
 
 .btn-danger {
@@ -197,9 +284,14 @@ body {
 }
 
 .badge {
+  display: inline-flex;
+  align-items: center;
   padding: 3px 10px;
   border-radius: 12px;
   font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+  margin: 2px 3px 2px 0;
 }
 
 .badge.ok {
@@ -247,6 +339,7 @@ body {
   max-width: 96vw;
   max-height: 92vh;
   overflow-y: auto;
+  box-shadow: 0 24px 70px rgba(20, 29, 42, .25);
 }
 
 .modal-lg {
@@ -407,7 +500,7 @@ body {
 }
 
 /* 移动端：表格转卡片式 */
-@media (max-width: 720px) {
+@media (max-width: 900px) {
   .container {
     padding: 0 12px;
     margin: 16px auto;
@@ -422,10 +515,26 @@ body {
     width: 100%;
   }
 
+  .toolbar-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .action-group:first-child {
+    padding-left: 0;
+    border-left: 0;
+  }
+
   .card {
     padding: 0;
     background: transparent;
+    border: 0;
     box-shadow: none;
+    overflow: visible;
+  }
+
+  .table-scroll {
+    overflow: visible;
   }
 
   .tbl,
@@ -435,6 +544,7 @@ body {
   .tbl td {
     display: block;
     width: 100%;
+    min-width: 0;
   }
 
   .tbl thead {
@@ -534,3 +644,36 @@ body {
 .auth-submit { width: 100%; padding: 10px; }
 .auth-warning { margin: 12px 0; padding: 10px 12px; background: #fff4df; color: #8a5a00; border-radius: 7px; line-height: 1.5; }
 .auth-error { min-height: 20px; margin-top: 12px; color: #d33; text-align: center; }
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11161d;
+    --card: #171d26;
+    --text: #edf2f7;
+    --muted: #98a4b3;
+    --border: #2b3543;
+    --header: #171d26;
+  }
+
+  body { background-image: radial-gradient(circle at 20% 0, rgba(47, 111, 235, .14), transparent 30%); }
+  .tbl th { background: #1c2430; }
+  .tbl tbody tr:hover { background: #192330; }
+  .btn { background: #1b2430; }
+  .btn:hover { background: #263244; }
+  .btn-primary { background: var(--primary); }
+  .btn-primary:hover { background: var(--primary-dark); }
+  .btn-danger:hover { background: #321f26; }
+  .modal-card,
+  .auth-card { background: var(--card); }
+  .modal-card label,
+  .confirm-text { color: #c6ced8; }
+  .modal-card input,
+  .modal-card select,
+  .modal-card textarea,
+  .auth-card input {
+    color: var(--text);
+    background: #111821;
+    border-color: var(--border);
+  }
+  .tag-global { background: #252e3a; }
+}

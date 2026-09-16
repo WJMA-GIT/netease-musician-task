@@ -20,32 +20,39 @@
 
     <main class="container">
       <div class="toolbar">
-        <h2>账号列表</h2>
+        <div class="toolbar-copy">
+          <h2>账号管理</h2>
+          <p>集中查看登录状态、任务进度和本地互助数据</p>
+        </div>
         <div class="toolbar-actions">
-          <button class="btn btn-primary" id="btn-listen-all">一键播放</button>
-          <button class="btn btn-danger" id="btn-stop-listen-all">停止播放</button>
-          <button class="btn btn-danger" id="btn-clear-all-logs">一键清除日志</button>
-          <button class="btn" id="btn-settings">全局设置</button>
-          <button class="btn btn-primary" id="btn-add">新增账号</button>
+          <div class="action-group">
+            <button class="btn btn-primary" id="btn-listen-all">一键播放</button>
+            <button class="btn btn-danger" id="btn-stop-listen-all">停止播放</button>
+          </div>
+          <div class="action-group">
+            <button class="btn btn-danger" id="btn-clear-all-logs">一键清除日志</button>
+            <button class="btn" id="btn-settings">全局设置</button>
+            <button class="btn btn-primary" id="btn-add">新增账号</button>
+          </div>
         </div>
       </div>
 
-      <div class="card">
-        <table class="tbl">
-          <thead>
-            <tr>
-              <th class="ta-c">手机号</th>
-              <th class="ta-c">昵称</th>
-              <th class="ta-c">Cookie 状态</th>
-              <th class="ta-c">状态</th>
-              <th class="ta-c">运行时间</th>
-              <th class="ta-c">本月发布</th>
-              <th class="ta-c">本地互助（今日）</th>
-              <th class="ta-r">操作</th>
-            </tr>
-          </thead>
-          <tbody id="acc-body"></tbody>
-        </table>
+      <div class="card table-card">
+        <div class="table-scroll">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th class="col-account">账号</th>
+                <th class="col-cookie">Cookie</th>
+                <th class="col-status">状态</th>
+                <th class="col-task">任务概况</th>
+                <th class="col-listen">本地互助（今日）</th>
+                <th class="col-actions ta-r">操作</th>
+              </tr>
+            </thead>
+            <tbody id="acc-body"></tbody>
+          </table>
+        </div>
         <div id="empty-hint" class="empty hidden">
           还没有账号，点右上角「新增账号」开始。
         </div>

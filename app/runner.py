@@ -42,19 +42,14 @@ def _record_auth_state(account_id: int, result: dict) -> bool:
     return True
 
 
-def _notify_auto_login_failure(account_id: int, account: dict, result: dict) -> None:
-    """定时任务自动恢复登录失败时通知；二维码提醒仍由登录模块负责。"""
-    account_name = account_label(account_id, account=account)
-    message = result.get("message") or "未知原因"
-    try:
-        send_configured_notification(
-            f"账号：{account_name}\n自动登录未完成：{message}\n请打开管理页面查看日志并重新登录。",
-            title="网易音乐人自动登录失败",
-            event="auto_login_failed",
-            extra={"account": account_name, "message": message},
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(f"自动登录失败通知发送异常：{exc}")
+def _cookie_ready(account_id: int, account: dict) -> bool:
+    """已知 Cookie 过期时直接终止，避免重复启动浏览器。"""
+    if account.get("cookie_status") != "expired":
+        return True
+    message = "任务已终止：Cookie 已失效，请先重新登录"
+    repo.add_log(account_id, "auth", "fail", message)
+    bus.status(account_id, "login_fail", message)
+    return False
 
 
 # ---------- 登录 ----------
@@ -95,6 +90,8 @@ def run_checkin(account_id: int) -> dict:
     acc = repo.get_account(account_id)
     if not acc:
         return {"ok": False, "message": "account not found"}
+    if not _cookie_ready(account_id, acc):
+        return {"ok": False, "auth_valid": False, "message": "cookie expired"}
 
     from app.browser.tasks import do_checkin
 
@@ -106,7 +103,8 @@ def run_checkin(account_id: int) -> dict:
         repo.add_log(account_id, "checkin", "fail", str(e))
         return {"ok": False, "message": str(e)}
 
-    _record_auth_state(account_id, res)
+    if not _record_auth_state(account_id, res):
+        return res
     musician = res.get("musician_checkin") or {}
     daily = res.get("daily_checkin") or {}
     repo.add_log(account_id, "musician_checkin", "success" if musician.get("ok") else "info", musician.get("message", ""))
@@ -155,6 +153,8 @@ def run_local_listen_batch(
     acc = repo.get_account(account_id)
     if not acc:
         return {"ok": False, "message": "account not found"}
+    if not _cookie_ready(account_id, acc):
+        return {"ok": False, "auth_valid": False, "message": "cookie expired"}
     if not allow_unenrolled and not acc.get("local_listen_enabled"):
         return {"ok": False, "message": "当前账号未加入本地互助"}
     jobs = _build_local_listen_jobs(account_id, max_count)
@@ -250,6 +250,9 @@ def _continuous_local_listen_loop(account_id: int, stop_event: threading.Event) 
             )
             if stop_event.is_set() or result.get("stopped"):
                 break
+            if result.get("auth_valid") is False:
+                _emit_run(account_id, "Cookie 已失效，持续播放已终止，请重新登录")
+                break
             if result.get("ok"):
                 continue
             _emit_run(account_id, f"播放失败，3 秒后自动重启：{result.get('message', '未知错误')}")
@@ -269,6 +272,8 @@ def start_continuous_local_listen_all() -> list[int]:
         if not account.get("enabled"):
             continue
         account_id = int(account["id"])
+        if not _cookie_ready(account_id, account):
+            continue
         if not _build_local_listen_jobs(account_id, 1):
             continue
         with _continuous_lock:
@@ -351,6 +356,8 @@ def run_interval_task(account_id: int) -> dict:
     acc = repo.get_account(account_id)
     if not acc:
         return {"ok": False, "message": "account not found"}
+    if not _cookie_ready(account_id, acc):
+        return {"ok": False, "auth_valid": False, "message": "cookie expired"}
 
     decision = _decide_interval(acc)
     if decision["kind"] == "vip":
@@ -361,6 +368,8 @@ def run_interval_task(account_id: int) -> dict:
         except Exception as e:  # noqa: BLE001
             repo.add_log(account_id, "vip", "fail", str(e))
             return {"ok": False, "message": str(e)}
+        if not _record_auth_state(account_id, res):
+            return res
         if res.get("further_vip_get_time"):
             repo.update_account(account_id, further_vip_get_time=res["further_vip_get_time"])
         repo.add_log(account_id, "vip", "success" if res.get("ok") else "info", res.get("message", ""))
@@ -374,6 +383,8 @@ def run_interval_task(account_id: int) -> dict:
     except Exception as e:  # noqa: BLE001
         repo.add_log(account_id, "publish", "fail", str(e))
         return {"ok": False, "message": str(e)}
+    if not _record_auth_state(account_id, res):
+        return res
     if res.get("ok"):
         repo.update_account(
             account_id,
@@ -422,6 +433,9 @@ def run_selected(account_id: int, tasks: list[str]) -> None:
     """
     acc = repo.get_account(account_id)
     if not acc:
+        return
+    if not _cookie_ready(account_id, acc):
+        _notify_manual_result(account_id, acc, tasks, ["执行失败：Cookie 已失效，请重新登录"], ok=False)
         return
 
     _emit_run(account_id, f"手动执行已选择任务：{', '.join(tasks)}")
@@ -526,6 +540,8 @@ def run_daily_for_account(account_id: int) -> None:
     acc = repo.get_account(account_id)
     if not acc or not acc["enabled"] or acc.get("account_role", "musician") != "musician":
         return
+    if not _cookie_ready(account_id, acc):
+        return
 
     from app.browser.tasks import do_daily_run
 
@@ -553,35 +569,8 @@ def run_daily_for_account(account_id: int) -> None:
         return
 
     if not _record_auth_state(account_id, res):
-        _emit_run(account_id, "每日任务检测到登录态失效，自动发起登录流程")
-        repo.add_log(account_id, "login", "info", "每日任务触发自动重新登录")
-        login_result = run_login(account_id)
-        if not login_result.get("ok"):
-            _emit_run(
-                account_id,
-                f"自动登录未完成：{login_result.get('message', '未知原因')}；本次每日任务停止",
-            )
-            _notify_auto_login_failure(account_id, acc, login_result)
-            return
-
-        _emit_run(account_id, "自动登录成功，重新执行本次每日任务")
-        refreshed = repo.get_account(account_id)
-        if not refreshed:
-            return
-        try:
-            res = _execute_daily(refreshed)
-        except Exception as e:  # noqa: BLE001
-            logger.exception("自动登录后的每日任务重试异常")
-            repo.add_log(account_id, "daily", "fail", f"自动登录后重试失败：{e}")
-            return
-        if not _record_auth_state(account_id, res):
-            _emit_run(account_id, "自动登录后仍未通过登录态校验，本次每日任务停止")
-            _notify_auto_login_failure(
-                account_id,
-                refreshed,
-                {"message": "自动登录后仍未通过服务端登录态校验"},
-            )
-            return
+        _emit_run(account_id, "每日任务检测到 Cookie 失效，本次任务已终止，请重新登录")
+        return
 
     # 分别记录音乐人签到和日常签到结果
     checkin = res.get("checkin") or {}

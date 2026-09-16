@@ -580,7 +580,10 @@ def do_publish_note(
     """独立入口：自己开浏览器发布动态（供手动单独触发）。"""
     bus.status(account_id, "running", "发布动态")
     with run_with_context(profile_dir, account_id=account_id, label="发布动态") as (context, page):
+        if not _validate_session(page, account_id):
+            return {"ok": False, "auth_valid": False, "message": "cookie expired", "cookie_str": ""}
         res = _publish_on_page(page, account_id, msg, search_keyword)
+        res["auth_valid"] = True
         res["cookie_str"] = cookies_to_str(context.cookies("https://music.163.com"))
         bus.status(account_id, "done", "发布动态完成")
         return res
@@ -709,7 +712,10 @@ def do_vip_claim(profile_dir: str, account_id: Optional[int] = None, timeout_ms:
     """独立入口：自己开浏览器领取 VIP（供手动单独触发）。"""
     bus.status(account_id, "running", "领取 VIP 权益")
     with run_with_context(profile_dir, account_id=account_id, label="VIP领取") as (context, page):
+        if not _validate_session(page, account_id):
+            return {"ok": False, "auth_valid": False, "message": "cookie expired"}
         res = _vip_claim_on_page(context, page, account_id, timeout_ms)
+        res["auth_valid"] = True
         bus.status(account_id, "done", "VIP 任务完成")
         return res
 

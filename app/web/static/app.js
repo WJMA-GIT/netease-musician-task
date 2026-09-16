@@ -172,13 +172,17 @@ async function loadAccounts() {
     const toggleBtn = `<button class="btn btn-sm" data-act="toggle" data-id="${a.id}" data-enabled="${enabled ? 1 : 0}">${enabled ? "暂停" : "启用"}</button>`;
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td data-label="手机号">${escapeHtml(a.phone)}</td>
-      <td data-label="昵称">${escapeHtml(a.nickname || "-")}</td>
-      <td data-label="Cookie 状态"><span class="badge ${status}">${statusText}</span></td>
-      <td data-label="状态">${enabledBadge}</td>
-      <td data-label="运行时间">${runTime}</td>
-      <td data-label="本月发布">${a.monthly_sends || 0}</td>
-      <td data-label="本地互助（今日）">${a.local_listen_enabled ? `帮助 ${a.local_listen_helped_today || 0} / 被帮助 ${a.local_listen_received_today || 0}` : "未加入"}</td>
+      <td data-label="账号" class="account-cell">
+        <strong>${escapeHtml(a.phone)}</strong>
+        <span>${escapeHtml(a.nickname || "未设置昵称")}</span>
+      </td>
+      <td data-label="Cookie"><span class="badge ${status}">${statusText}</span></td>
+      <td data-label="状态" class="status-cell">${enabledBadge}</td>
+      <td data-label="任务概况" class="task-cell">
+        <span>运行 ${runTime}</span>
+        <span>本月发布 ${a.monthly_sends || 0}</span>
+      </td>
+      <td data-label="本地互助（今日）" class="listen-cell">${a.local_listen_enabled ? `<span>帮助 ${a.local_listen_helped_today || 0}</span><span>被帮助 ${a.local_listen_received_today || 0}</span>` : "未加入"}</td>
       <td data-label="操作" class="cell-actions">
         <button class="btn btn-sm btn-primary" data-act="login" data-id="${a.id}" data-phone="${escapeHtml(a.phone)}" ${running ? "disabled" : ""}>登录</button>
         ${actionBtn}
