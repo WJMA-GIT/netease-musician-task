@@ -17,7 +17,7 @@ on:
       version_tag:
         description: "手动指定镜像版本，格式 vx.x.x（如 v2.0.4）"
         required: true
-        default: "v2.0.12"
+        default: "v2.0.13"
 
 jobs:
   build:

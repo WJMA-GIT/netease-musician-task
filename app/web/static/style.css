@@ -192,6 +192,11 @@ body {
   gap: 10px;
 }
 
+.account-cell {
+  cursor: grab;
+  touch-action: none;
+}
+
 .account-info {
   min-width: 0;
 }

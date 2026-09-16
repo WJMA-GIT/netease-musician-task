@@ -232,10 +232,11 @@ function finishAccountDrag(save = false) {
 }
 
 $("#acc-body").addEventListener("pointerdown", (event) => {
-  const handle = event.target.closest(".drag-handle");
-  if (!handle || event.button > 0) return;
+  const accountCell = event.target.closest(".account-cell");
+  if (!accountCell || event.button > 0) return;
+  event.preventDefault();
   finishAccountDrag();
-  const row = handle.closest("tr[data-account-id]");
+  const row = accountCell.closest("tr[data-account-id]");
   dragPress = {
     pointerId: event.pointerId,
     startX: event.clientX,
@@ -245,7 +246,7 @@ $("#acc-body").addEventListener("pointerdown", (event) => {
       draggingAccount = true;
       row.classList.add("dragging");
       document.body.classList.add("account-dragging");
-      handle.setPointerCapture?.(event.pointerId);
+      accountCell.setPointerCapture?.(event.pointerId);
     }, 350),
   };
 });
@@ -259,16 +260,20 @@ document.addEventListener("pointermove", (event) => {
     return;
   }
   event.preventDefault();
-  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest("tr[data-account-id]");
-  if (!target || target === draggedRow) return;
-  const rect = target.getBoundingClientRect();
-  target.parentNode.insertBefore(draggedRow, event.clientY < rect.top + rect.height / 2 ? target : target.nextSibling);
+  const body = $("#acc-body");
+  const before = [...body.querySelectorAll("tr[data-account-id]:not(.dragging)")]
+    .find((row) => event.clientY < row.getBoundingClientRect().top + row.offsetHeight / 2);
+  body.insertBefore(draggedRow, before || null);
 });
 
-document.addEventListener("pointerup", () => finishAccountDrag(!!draggedRow));
-document.addEventListener("pointercancel", () => finishAccountDrag());
+document.addEventListener("pointerup", (event) => {
+  if (dragPress && event.pointerId === dragPress.pointerId) finishAccountDrag(!!draggedRow);
+});
+document.addEventListener("pointercancel", (event) => {
+  if (dragPress && event.pointerId === dragPress.pointerId) finishAccountDrag();
+});
 $("#acc-body").addEventListener("contextmenu", (event) => {
-  if (event.target.closest(".drag-handle")) event.preventDefault();
+  if (event.target.closest(".account-cell")) event.preventDefault();
 });
 
 $("#acc-body").addEventListener("keydown", (event) => {
