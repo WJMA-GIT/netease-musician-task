@@ -179,19 +179,29 @@ body {
 .col-listen { width: 14%; }
 .col-actions { width: 30%; }
 
-.account-cell strong,
-.account-cell span,
+.account-info strong,
+.account-info span,
 .task-cell span,
 .listen-cell span {
   display: block;
 }
 
-.account-cell strong {
+.account-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.account-info {
+  min-width: 0;
+}
+
+.account-info strong {
   font-size: 13px;
   font-weight: 650;
 }
 
-.account-cell span,
+.account-info span,
 .task-cell span + span,
 .listen-cell span + span {
   margin-top: 5px;
@@ -199,7 +209,7 @@ body {
   font-size: 12px;
 }
 
-.account-cell span {
+.account-info span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -217,12 +227,43 @@ body {
   text-align: right;
 }
 
-.tbl td.cell-actions {
+.action-buttons {
   display: flex;
   justify-content: flex-end;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.drag-handle {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 30px;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  cursor: grab;
+  font-size: 18px;
+  line-height: 1;
+  touch-action: none;
+}
+
+.drag-handle:hover,
+.drag-handle:focus-visible {
+  color: var(--primary);
+  outline: none;
+}
+
+.tbl tr.dragging {
+  position: relative;
+  z-index: 2;
+  background: #edf4ff;
+  box-shadow: 0 8px 24px rgba(47, 111, 235, .2);
+}
+
+.account-dragging {
+  cursor: grabbing;
+  user-select: none;
 }
 
 .empty {
@@ -595,6 +636,12 @@ body {
     margin-bottom: 4px;
   }
 
+  .action-buttons {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
   .tbl td.cell-actions .btn-sm {
     margin-left: 0;
     flex: 1;
@@ -658,6 +705,7 @@ body {
   body { background-image: radial-gradient(circle at 20% 0, rgba(47, 111, 235, .14), transparent 30%); }
   .tbl th { background: #1c2430; }
   .tbl tbody tr:hover { background: #192330; }
+  .tbl tr.dragging { background: #1d3048; }
   .btn { background: #1b2430; }
   .btn:hover { background: #263244; }
   .btn-primary { background: var(--primary); }

@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     month_tag           TEXT,          -- YYYY-MM，用于月度计数归零
     local_listen_enabled INTEGER NOT NULL DEFAULT 0,
     local_listen_item_id TEXT,
+    sort_order          INTEGER NOT NULL DEFAULT 0,
     created_at          TEXT DEFAULT (datetime('now','localtime')),
     updated_at          TEXT DEFAULT (datetime('now','localtime'))
 );
@@ -94,6 +95,9 @@ def init_db() -> None:
             conn.execute("ALTER TABLE accounts ADD COLUMN daily_tasks_enabled INTEGER NOT NULL DEFAULT 1")
         if "account_role" not in columns:
             conn.execute("ALTER TABLE accounts ADD COLUMN account_role TEXT NOT NULL DEFAULT 'musician'")
+        if "sort_order" not in columns:
+            conn.execute("ALTER TABLE accounts ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
+        conn.execute("UPDATE accounts SET sort_order=id WHERE sort_order=0")
         for k, v in SETTINGS_SEED.items():
             conn.execute(
                 "INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)", (k, v)

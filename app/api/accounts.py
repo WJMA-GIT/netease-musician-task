@@ -34,6 +34,10 @@ class AccountUpdate(BaseModel):
     local_listen_item_id: str | None = None
 
 
+class AccountOrder(BaseModel):
+    account_ids: list[int]
+
+
 def _safe(acc: dict) -> dict:
     """对外隐藏密码。"""
     out = dict(acc)
@@ -75,6 +79,15 @@ def create_account(body: AccountCreate) -> dict:
     )
     _reschedule()
     return _safe(repo.get_account(account_id))
+
+
+@router.put("/order")
+def reorder_accounts(body: AccountOrder) -> dict:
+    try:
+        repo.reorder_accounts(body.account_ids)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"ok": True}
 
 
 @router.patch("/{account_id}")

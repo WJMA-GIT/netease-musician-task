@@ -142,9 +142,12 @@ function handleEvent(msg) {
 
 // ---------- 账号列表 ----------
 let globalSendTime = "09:30";
+let draggingAccount = false;
 
 async function loadAccounts() {
+  if (draggingAccount) return;
   const accounts = await api("/api/accounts");
+  if (draggingAccount) return;
   const body = $("#acc-body");
   body.innerHTML = "";
   $("#empty-hint").classList.toggle("hidden", accounts.length > 0);
@@ -171,10 +174,13 @@ async function loadAccounts() {
       : `<span class="badge expired">暂停</span>`;
     const toggleBtn = `<button class="btn btn-sm" data-act="toggle" data-id="${a.id}" data-enabled="${enabled ? 1 : 0}">${enabled ? "暂停" : "启用"}</button>`;
     const tr = document.createElement("tr");
+    tr.dataset.accountId = a.id;
     tr.innerHTML = `
       <td data-label="账号" class="account-cell">
-        <strong>${escapeHtml(a.phone)}</strong>
-        <span>${escapeHtml(a.nickname || "未设置昵称")}</span>
+        <div class="account-content">
+          <button type="button" class="drag-handle" title="长按拖动排序" aria-label="长按拖动账号排序">⠿</button>
+          <div class="account-info"><strong>${escapeHtml(a.phone)}</strong><span>${escapeHtml(a.nickname || "未设置昵称")}</span></div>
+        </div>
       </td>
       <td data-label="Cookie"><span class="badge ${status}">${statusText}</span></td>
       <td data-label="状态" class="status-cell">${enabledBadge}</td>
@@ -184,16 +190,98 @@ async function loadAccounts() {
       </td>
       <td data-label="本地互助（今日）" class="listen-cell">${a.local_listen_enabled ? `<span>帮助 ${a.local_listen_helped_today || 0}</span><span>被帮助 ${a.local_listen_received_today || 0}</span>` : "未加入"}</td>
       <td data-label="操作" class="cell-actions">
-        <button class="btn btn-sm btn-primary" data-act="login" data-id="${a.id}" data-phone="${escapeHtml(a.phone)}" ${running ? "disabled" : ""}>登录</button>
-        ${actionBtn}
-        ${historyBtn}
-        ${toggleBtn}
-        <button class="btn btn-sm" data-act="edit" data-id="${a.id}">编辑</button>
-        <button class="btn btn-sm btn-danger" data-act="delete" data-id="${a.id}" data-phone="${escapeHtml(a.phone)}">删除</button>
+        <div class="action-buttons">
+          <button class="btn btn-sm btn-primary" data-act="login" data-id="${a.id}" data-phone="${escapeHtml(a.phone)}" ${running ? "disabled" : ""}>登录</button>
+          ${actionBtn}
+          ${historyBtn}
+          ${toggleBtn}
+          <button class="btn btn-sm" data-act="edit" data-id="${a.id}">编辑</button>
+          <button class="btn btn-sm btn-danger" data-act="delete" data-id="${a.id}" data-phone="${escapeHtml(a.phone)}">删除</button>
+        </div>
       </td>`;
     body.appendChild(tr);
   }
 }
+
+let dragPress = null;
+let draggedRow = null;
+
+async function persistAccountOrder() {
+  const account_ids = [...$("#acc-body").querySelectorAll("tr[data-account-id]")]
+    .map((row) => Number(row.dataset.accountId));
+  try {
+    await api("/api/accounts/order", {
+      method: "PUT",
+      body: JSON.stringify({ account_ids }),
+    });
+  } catch (err) {
+    alert("保存排序失败：" + err.message);
+    await loadAccounts();
+  }
+}
+
+function finishAccountDrag(save = false) {
+  if (dragPress) clearTimeout(dragPress.timer);
+  dragPress = null;
+  if (!draggedRow) return;
+  draggedRow.classList.remove("dragging");
+  draggedRow = null;
+  draggingAccount = false;
+  document.body.classList.remove("account-dragging");
+  if (save) persistAccountOrder();
+}
+
+$("#acc-body").addEventListener("pointerdown", (event) => {
+  const handle = event.target.closest(".drag-handle");
+  if (!handle || event.button > 0) return;
+  finishAccountDrag();
+  const row = handle.closest("tr[data-account-id]");
+  dragPress = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    timer: setTimeout(() => {
+      draggedRow = row;
+      draggingAccount = true;
+      row.classList.add("dragging");
+      document.body.classList.add("account-dragging");
+      handle.setPointerCapture?.(event.pointerId);
+    }, 350),
+  };
+});
+
+document.addEventListener("pointermove", (event) => {
+  if (!dragPress || event.pointerId !== dragPress.pointerId) return;
+  if (!draggedRow) {
+    if (Math.hypot(event.clientX - dragPress.startX, event.clientY - dragPress.startY) > 8) {
+      finishAccountDrag();
+    }
+    return;
+  }
+  event.preventDefault();
+  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest("tr[data-account-id]");
+  if (!target || target === draggedRow) return;
+  const rect = target.getBoundingClientRect();
+  target.parentNode.insertBefore(draggedRow, event.clientY < rect.top + rect.height / 2 ? target : target.nextSibling);
+});
+
+document.addEventListener("pointerup", () => finishAccountDrag(!!draggedRow));
+document.addEventListener("pointercancel", () => finishAccountDrag());
+$("#acc-body").addEventListener("contextmenu", (event) => {
+  if (event.target.closest(".drag-handle")) event.preventDefault();
+});
+
+$("#acc-body").addEventListener("keydown", (event) => {
+  const handle = event.target.closest(".drag-handle");
+  if (!handle || !["ArrowUp", "ArrowDown"].includes(event.key)) return;
+  const row = handle.closest("tr[data-account-id]");
+  const sibling = event.key === "ArrowUp" ? row.previousElementSibling : row.nextElementSibling;
+  if (!sibling) return;
+  event.preventDefault();
+  row.parentNode.insertBefore(row, event.key === "ArrowUp" ? sibling : sibling.nextSibling);
+  handle.focus();
+  persistAccountOrder();
+});
 
 async function refreshGlobalSendTime() {
   try {

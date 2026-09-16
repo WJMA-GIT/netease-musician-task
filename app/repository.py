@@ -57,7 +57,7 @@ def _safe_phone(phone: str) -> str:
 
 def list_accounts() -> list[dict[str, Any]]:
     with db() as conn:
-        rows = conn.execute("SELECT * FROM accounts ORDER BY id").fetchall()
+        rows = conn.execute("SELECT * FROM accounts ORDER BY sort_order, id").fetchall()
         return [dict(r) for r in rows]
 
 
@@ -84,14 +84,29 @@ def create_account(
 ) -> int:
     profile_dir = os.path.join(PROFILE_BASEDIR, _safe_phone(phone))
     with db() as conn:
+        next_order = int(conn.execute("SELECT COALESCE(MAX(sort_order), 0) + 1 FROM accounts").fetchone()[0])
         cur = conn.execute(
             "INSERT INTO accounts(phone, password, profile_dir, enabled, run_time, interval_days, "
-            "account_role, daily_tasks_enabled, local_listen_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "account_role, daily_tasks_enabled, local_listen_enabled, sort_order) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (phone, password, profile_dir, 1 if enabled else 0, run_time, interval_days,
              account_role, 1 if account_role == "musician" else 0,
-             1 if account_role == "player" else 0),
+             1 if account_role == "player" else 0, next_order),
         )
         return int(cur.lastrowid)
+
+
+def reorder_accounts(account_ids: list[int]) -> None:
+    if len(account_ids) != len(set(account_ids)):
+        raise ValueError("账号排序中存在重复项")
+    with db() as conn:
+        current = {int(row["id"]) for row in conn.execute("SELECT id FROM accounts").fetchall()}
+        if set(account_ids) != current:
+            raise ValueError("账号排序与当前账号列表不一致")
+        conn.executemany(
+            "UPDATE accounts SET sort_order=? WHERE id=?",
+            [(index, account_id) for index, account_id in enumerate(account_ids, 1)],
+        )
 
 
 def update_account(account_id: int, **fields) -> None:

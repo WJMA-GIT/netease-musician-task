@@ -31,6 +31,27 @@ class ClearLogsTest(unittest.TestCase):
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM local_listen_runs").fetchone()[0], 1)
 
 
+class AccountOrderTest(unittest.TestCase):
+    def test_reorder_accounts_is_persisted(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.executescript(
+            "CREATE TABLE accounts (id INTEGER PRIMARY KEY, sort_order INTEGER);"
+            "INSERT INTO accounts VALUES (1, 1), (2, 2), (3, 3);"
+        )
+
+        @contextmanager
+        def fake_db():
+            yield conn
+            conn.commit()
+
+        with patch.object(repository, "db", fake_db):
+            repository.reorder_accounts([3, 1, 2])
+            self.assertEqual([row["id"] for row in repository.list_accounts()], [3, 1, 2])
+            with self.assertRaises(ValueError):
+                repository.reorder_accounts([3, 3, 2])
+
+
 class ActiveStateTest(unittest.TestCase):
     @patch("app.browser.registry.active_infos", return_value=[])
     @patch("app.runner.continuous_local_listen_account_ids", return_value=[2, 5])
