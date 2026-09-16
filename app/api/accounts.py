@@ -99,6 +99,12 @@ def update_account(account_id: int, body: AccountUpdate) -> dict:
     if fields.get("account_role") == "player":
         fields["daily_tasks_enabled"] = 0
         fields["local_listen_enabled"] = 1
+    if fields.get("enabled") == 0:
+        from app import runner
+        from app.browser import registry
+
+        runner.stop_continuous_local_listen(account_id)
+        registry.force_stop(account_id)
     repo.update_account(account_id, **fields)
     _reschedule()
     return _safe(repo.get_account(account_id))
@@ -110,6 +116,11 @@ def delete_account(account_id: int, delete_profile: bool = False) -> dict:
     if not acc:
         raise HTTPException(404, "账号不存在")
     profile_dir = acc.get("profile_dir")
+    from app import runner
+    from app.browser import registry
+
+    runner.stop_continuous_local_listen(account_id)
+    registry.force_stop(account_id)
     repo.delete_account(account_id)
     removed = False
     if delete_profile and profile_dir:

@@ -1,10 +1,11 @@
 """
 账号任务编排：把 login/checkin/publish/vip 串起来，处理频率控制与 DB 状态更新。
-所有浏览器操作通过 worker.submit 投递到 worker 线程串行执行。
+所有浏览器操作通过 worker.submit 投递；不同账号并发，同一 profile 串行。
 """
 
 from __future__ import annotations
 
+import threading
 import time
 from datetime import datetime
 from typing import Optional
@@ -143,12 +144,18 @@ def _build_local_listen_jobs(account_id: int, limit: int) -> list[dict]:
     return jobs
 
 
-def run_local_listen_batch(account_id: int, max_count: int) -> dict:
+def run_local_listen_batch(
+    account_id: int,
+    max_count: int,
+    *,
+    allow_unenrolled: bool = False,
+    stop_event: threading.Event | None = None,
+) -> dict:
     """在一个浏览器会话中批量播放其他本地参与账号的歌曲。"""
     acc = repo.get_account(account_id)
     if not acc:
         return {"ok": False, "message": "account not found"}
-    if not acc.get("local_listen_enabled"):
+    if not allow_unenrolled and not acc.get("local_listen_enabled"):
         return {"ok": False, "message": "当前账号未加入本地互助"}
     jobs = _build_local_listen_jobs(account_id, max_count)
     if not jobs:
@@ -166,6 +173,8 @@ def run_local_listen_batch(account_id: int, max_count: int) -> dict:
             item_ids,
             account_id,
             play_percent=play_percent,
+            stop_event=stop_event,
+            continuous=stop_event is not None,
         )
     except Exception as exc:  # noqa: BLE001
         batch = {"ok": False, "results": [], "message": str(exc)}
@@ -217,6 +226,79 @@ def run_local_listen_to_limit(account_id: int) -> dict:
 
 def run_auto_local_listen_for_account(account_id: int) -> None:
     run_local_listen_to_limit(account_id)
+
+
+_continuous_lock = threading.Lock()
+_continuous_listen: dict[int, tuple[threading.Thread, threading.Event]] = {}
+
+
+def continuous_local_listen_account_ids() -> list[int]:
+    with _continuous_lock:
+        return sorted(
+            account_id
+            for account_id, (thread, stop_event) in _continuous_listen.items()
+            if thread.is_alive() and not stop_event.is_set()
+        )
+
+
+def _continuous_local_listen_loop(account_id: int, stop_event: threading.Event) -> None:
+    bus.status(account_id, "running", "持续播放已启动")
+    try:
+        while not stop_event.is_set():
+            result = run_local_listen_batch(
+                account_id, 1, allow_unenrolled=True, stop_event=stop_event
+            )
+            if stop_event.is_set() or result.get("stopped"):
+                break
+            if result.get("ok"):
+                continue
+            _emit_run(account_id, f"播放失败，3 秒后自动重启：{result.get('message', '未知错误')}")
+            stop_event.wait(3)
+    finally:
+        with _continuous_lock:
+            current = _continuous_listen.get(account_id)
+            if current and current[1] is stop_event:
+                _continuous_listen.pop(account_id, None)
+        bus.status(account_id, "stopped", "持续播放已停止")
+
+
+def start_continuous_local_listen_all() -> list[int]:
+    """为全部启用账号各启一个持续播放线程；重复点击不会重复启动。"""
+    started: list[int] = []
+    for account in repo.list_accounts():
+        if not account.get("enabled"):
+            continue
+        account_id = int(account["id"])
+        if not _build_local_listen_jobs(account_id, 1):
+            continue
+        with _continuous_lock:
+            current = _continuous_listen.get(account_id)
+            if current and current[0].is_alive():
+                continue
+            stop_event = threading.Event()
+            thread = threading.Thread(
+                target=_continuous_local_listen_loop,
+                args=(account_id, stop_event),
+                name=f"continuous-listen-{account_id}",
+                daemon=True,
+            )
+            _continuous_listen[account_id] = (thread, stop_event)
+            thread.start()
+            started.append(account_id)
+    return started
+
+
+def stop_continuous_local_listen(account_id: int | None = None) -> list[int]:
+    """发出持续播放停止信号；浏览器进程由 API 紧接着关闭。"""
+    with _continuous_lock:
+        targets = [
+            (current_id, stop_event)
+            for current_id, (_, stop_event) in _continuous_listen.items()
+            if account_id is None or current_id == account_id
+        ]
+    for _, stop_event in targets:
+        stop_event.set()
+    return [current_id for current_id, _ in targets]
 
 
 # ---------- 间隔任务（发布动态 / VIP 领取）----------

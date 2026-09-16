@@ -18,7 +18,7 @@ def start_login(account_id: int) -> dict:
     if not acc:
         raise HTTPException(404, "账号不存在")
 
-    # 在后台线程调用 runner.run_login（其内部再投递到 browser worker 串行执行），
+    # 在后台线程调用 runner.run_login（其内部再投递到账号独立的 browser worker），
     # 立即返回，前端通过 WebSocket 看实时进度。
     def _bg() -> None:
         try:

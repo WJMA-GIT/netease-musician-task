@@ -1,10 +1,8 @@
 """
 浏览器 worker：每个浏览器任务跑在独立线程。
 
-并发策略：靠「抢占」保证同一时刻只有一个浏览器在跑——
-提交新任务前先强制结束已有浏览器进程（registry.preempt_existing），
-这样即使旧任务卡在扫码等待/挂起的 Playwright 调用上，其浏览器进程被杀后
-会立即抛错退出，不会阻塞新任务。
+不同账号的 profile 可并发运行；同一 profile 用锁串行，避免 Playwright
+同时打开同一个持久化目录导致冲突。
 
 用法：
     submit(fn, *args, **kwargs) -> Future
@@ -31,17 +29,9 @@ class BrowserWorker:
     def start(self) -> None:
         # 无常驻线程，保留接口兼容 main.py 的启动调用
         self._started = True
-        logger.info("浏览器 worker 已就绪（抢占式单浏览器）")
+        logger.info("浏览器 worker 已就绪（多账号并发）")
 
     def submit(self, fn: Callable[..., Any], *args, **kwargs) -> Future:
-        # 抢占：强制结束已有浏览器，保证同一时刻只有一个浏览器在跑。
-        try:
-            from app.browser import registry
-
-            registry.preempt_existing()
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"抢占旧浏览器失败：{e}")
-
         fut: Future = Future()
 
         def _run() -> None:
@@ -58,13 +48,29 @@ class BrowserWorker:
 # 全局单例
 worker = BrowserWorker()
 
+_profile_locks_guard = threading.Lock()
+_profile_locks: dict[str, threading.Lock] = {}
+
+
+def _profile_lock(profile_dir: str) -> threading.Lock:
+    key = os.path.abspath(profile_dir)
+    with _profile_locks_guard:
+        return _profile_locks.setdefault(key, threading.Lock())
+
 
 @contextmanager
-def run_with_context(profile_dir: str, *, headless: bool | None = None, account_id: int | None = None, label: str = ""):
+def run_with_context(
+    profile_dir: str,
+    *,
+    headless: bool | None = None,
+    account_id: int | None = None,
+    label: str = "",
+    cancel_event: threading.Event | None = None,
+):
     """
     在 worker 线程内打开一个持久化 Playwright context，yield (context, page)。
     退出时自动关闭。必须在 worker 线程内调用（Playwright 同步 API 线程亲和）。
-    打开后登记浏览器进程，供抢占逻辑跨线程强制结束。
+    打开后登记浏览器进程，供手动停止逻辑跨线程强制结束。
     """
     from playwright.sync_api import sync_playwright
     from app.browser import registry
@@ -82,38 +88,47 @@ def run_with_context(profile_dir: str, *, headless: bool | None = None, account_
     else:
         use_headless = headless
 
-    with sync_playwright() as p:
-        context = p.chromium.launch_persistent_context(
-            user_data_dir=profile_dir,
-            headless=use_headless,
-            viewport={"width": 1280, "height": 800},
-            user_agent=USER_AGENT,
-            locale="zh-CN",
-            timezone_id="Asia/Shanghai",
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--disable-dev-shm-usage",
-                "--no-sandbox",
-            ],
-        )
-        context.add_init_script(STEALTH_SCRIPT)
-        page = context.new_page()
-        page.set_default_timeout(BROWSER_TIMEOUT_MS)
+    profile_lock = _profile_lock(profile_dir)
+    while not profile_lock.acquire(timeout=0.2):
+        if cancel_event is not None and cancel_event.is_set():
+            raise RuntimeError("任务已停止")
+    try:
+        if cancel_event is not None and cancel_event.is_set():
+            raise RuntimeError("任务已停止")
+        with sync_playwright() as p:
+            context = p.chromium.launch_persistent_context(
+                user_data_dir=profile_dir,
+                headless=use_headless,
+                viewport={"width": 1280, "height": 800},
+                user_agent=USER_AGENT,
+                locale="zh-CN",
+                timezone_id="Asia/Shanghai",
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-dev-shm-usage",
+                    "--no-sandbox",
+                ],
+            )
+            context.add_init_script(STEALTH_SCRIPT)
+            page = context.new_page()
+            page.set_default_timeout(BROWSER_TIMEOUT_MS)
 
-        # 登记浏览器进程（driver 进程树含 chromium），供抢占强制结束
-        pid = None
-        try:
-            pid = context._impl_obj._connection._transport._proc.pid
-            registry.register(pid, account_id, label)
-        except Exception:
-            pass
-
-        try:
-            yield context, page
-        finally:
-            if pid is not None:
-                registry.unregister(pid)
+            # 登记浏览器进程（driver 进程树含 chromium），供手动停止
+            pid = None
             try:
-                context.close()
+                pid = context._impl_obj._connection._transport._proc.pid
+                registry.register(pid, account_id, label)
             except Exception:
                 pass
+
+            try:
+                yield context, page
+            finally:
+                if pid is not None:
+                    registry.unregister(pid)
+                try:
+                    context.close()
+                except Exception:
+                    pass
+    finally:
+        profile_lock.release()

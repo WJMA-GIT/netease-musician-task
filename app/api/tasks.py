@@ -20,6 +20,28 @@ class RunSelection(BaseModel):
     tasks: list[str]
 
 
+@router.post("/local-listen/start-all")
+def start_all_local_listen() -> dict:
+    from app import runner
+
+    started = runner.start_continuous_local_listen_all()
+    active = runner.continuous_local_listen_account_ids()
+    if not active:
+        raise HTTPException(400, "没有可启动的已启用账号")
+    return {"ok": True, "started": started, "active": active,
+            "message": f"持续播放已启动，共 {len(active)} 个账号并发"}
+
+
+@router.post("/local-listen/stop-all")
+def stop_all_local_listen() -> dict:
+    from app import runner
+    from app.browser import registry
+
+    signaled = runner.stop_continuous_local_listen()
+    stopped = registry.force_stop(label="本地互助听歌")
+    return {"ok": bool(signaled or stopped), "message": f"已停止 {len(signaled)} 个持续播放任务"}
+
+
 @router.post("/{account_id}/run")
 def run_selected(account_id: int, body: RunSelection) -> dict:
     account = repo.get_account(account_id)
@@ -54,10 +76,18 @@ def logs(account_id: int | None = None, limit: int = 100) -> list[dict]:
 
 @router.get("/active")
 def active() -> dict:
-    """当前正在运行浏览器的账号信息（用于前端把「执行」按钮切成「查看」）。"""
+    """返回全部活动账号，兼容保留 active 单值。"""
+    from app import runner
     from app.browser import registry
 
-    return {"active": registry.active_info()}
+    infos = registry.active_infos()
+    known = {info["account_id"] for info in infos}
+    infos.extend(
+        {"account_id": account_id, "label": "持续播放", "pid": None}
+        for account_id in runner.continuous_local_listen_account_ids()
+        if account_id not in known
+    )
+    return {"active": infos[0] if infos else None, "actives": infos}
 
 
 @router.get("/{account_id}/live")
@@ -71,7 +101,9 @@ def live_logs(account_id: int) -> dict:
 @router.post("/{account_id}/stop")
 def stop(account_id: int) -> dict:
     """强制停止该账号正在运行的浏览器任务。"""
+    from app import runner
     from app.browser import registry
 
-    stopped = registry.force_stop(account_id)
+    signaled = runner.stop_continuous_local_listen(account_id)
+    stopped = registry.force_stop(account_id) or bool(signaled)
     return {"ok": stopped, "message": "已强制停止" if stopped else "该账号当前没有正在运行的任务"}

@@ -263,6 +263,8 @@ def do_listen_music_batch(
     account_id: Optional[int] = None,
     timeout_seconds: int = 1200,
     play_percent: int = 34,
+    stop_event=None,
+    continuous: bool = False,
 ) -> dict:
     """一个浏览器上下文内连续新开标签页执行多首本地互助歌曲。"""
     item_ids = [str(item).strip() for item in netease_item_ids if str(item).strip()]
@@ -271,7 +273,9 @@ def do_listen_music_batch(
 
     bus.status(account_id, "running", f"本地互助批量播放：{len(item_ids)} 首")
     results: list[dict] = []
-    with run_with_context(profile_dir, account_id=account_id, label="本地互助听歌") as (context, page):
+    with run_with_context(
+        profile_dir, account_id=account_id, label="本地互助听歌", cancel_event=stop_event
+    ) as (context, page):
         if not _validate_session(page, account_id):
             return {"ok": False, "auth_valid": False, "results": [], "message": "cookie expired"}
         current_page = page
@@ -308,7 +312,7 @@ def do_listen_music_batch(
                 break
         success_count = sum(1 for result in results if result.get("ok"))
     stopped = any(result.get("stopped") for result in results)
-    if not stopped:
+    if not stopped and not continuous:
         bus.status(account_id, "done", f"本地互助完成：{success_count}/{len(item_ids)} 首")
     return {"ok": success_count == len(item_ids), "auth_valid": True, "results": results,
             "stopped": stopped,

@@ -1,8 +1,7 @@
 """
-活跃浏览器进程注册表：记录当前正在运行的浏览器任务（PID + 账号），
-新任务启动前可强制结束旧的，避免持久化 profile 冲突。
+活跃浏览器进程注册表：按 PID 记录并发运行的浏览器任务（PID + 账号）。
 
-Playwright 同步对象线程绑定，无法跨线程 close()，因此抢占靠杀进程树实现。
+Playwright 同步对象线程绑定，无法跨线程 close()，因此手动停止靠杀进程树实现。
 """
 
 from __future__ import annotations
@@ -28,7 +27,7 @@ class _Active:
 
 
 _lock = threading.Lock()
-_active: Optional[_Active] = None
+_active: dict[int, _Active] = {}
 
 
 def _kill_tree(pid: int) -> None:
@@ -58,88 +57,70 @@ def _kill_tree(pid: int) -> None:
         logger.warning(f"兜底结束进程 {pid} 失败：{e}")
 
 
-def preempt_existing() -> None:
-    """
-    若存在活跃浏览器，强制结束它，为新任务让路。
-    在提交新浏览器任务前调用。
-    """
-    global _active
-    with _lock:
-        cur = _active
-    if cur is None:
-        return
-
-    tip = f"账号 {account_label(cur.account_id)}" if cur.account_id is not None else "上一个任务"
-    msg = f"检测到已有浏览器正在运行（{tip}·{cur.label}），强制关闭以避免冲突"
-    logger.warning(msg)
-    bus.log(cur.account_id, msg, level="warn")
-    _kill_tree(cur.pid)
-    bus.log(cur.account_id, "已强制关闭上一个浏览器进程", level="warn")
-
-    with _lock:
-        if _active is cur:
-            _active = None
-
-
 def register(pid: int, account_id: Optional[int], label: str = "") -> None:
-    global _active
     with _lock:
-        _active = _Active(pid, account_id, label)
+        _active[pid] = _Active(pid, account_id, label)
     logger.info(f"登记活跃浏览器 pid={pid} 账号={account_label(account_id)} {label}")
 
 
 def unregister(pid: int) -> None:
-    global _active
     with _lock:
-        if _active is not None and _active.pid == pid:
-            _active = None
+        _active.pop(pid, None)
 
 
 def active_account_id() -> Optional[int]:
-    """返回当前正在运行浏览器的账号 id，无则 None。"""
+    """兼容旧调用：返回任一正在运行浏览器的账号 id。"""
     with _lock:
-        return _active.account_id if _active is not None else None
+        cur = next(iter(_active.values()), None)
+        return cur.account_id if cur is not None else None
 
 
 def active_info() -> Optional[dict]:
+    """兼容旧调用：返回任一活动任务。"""
     with _lock:
-        if _active is None:
-            return None
-        return {"account_id": _active.account_id, "label": _active.label, "pid": _active.pid}
+        cur = next(iter(_active.values()), None)
+        return None if cur is None else {"account_id": cur.account_id, "label": cur.label, "pid": cur.pid}
+
+
+def active_infos() -> list[dict]:
+    with _lock:
+        return [
+            {"account_id": cur.account_id, "label": cur.label, "pid": cur.pid}
+            for cur in _active.values()
+        ]
 
 
 def is_current_task(account_id: Optional[int]) -> bool:
     """当前调用线程是否仍是注册中的浏览器任务；强停或被抢占后立即为 False。"""
     thread_id = threading.get_ident()
     with _lock:
-        return (
-            _active is not None
-            and _active.thread_id == thread_id
-            and _active.account_id == account_id
+        return any(
+            cur.thread_id == thread_id and cur.account_id == account_id
+            for cur in _active.values()
         )
 
 
-def force_stop(account_id: Optional[int] = None) -> bool:
+def force_stop(account_id: Optional[int] = None, *, label: Optional[str] = None) -> bool:
     """
-    强制结束当前活跃浏览器。若指定 account_id，仅当匹配时才结束。
-    返回是否执行了结束操作。
+    强制结束匹配账号的全部活跃浏览器；account_id 为空时停止全部。
     """
-    global _active
     with _lock:
-        cur = _active
-    if cur is None:
-        return False
-    if account_id is not None and cur.account_id != account_id:
+        targets = [
+            cur for cur in _active.values()
+            if (account_id is None or cur.account_id == account_id)
+            and (label is None or cur.label == label)
+        ]
+        for cur in targets:
+            _active.pop(cur.pid, None)
+    if not targets:
         return False
 
-    tip = f"账号 {account_label(cur.account_id)}" if cur.account_id is not None else "任务"
-    msg = f"手动强制停止（{tip}·{cur.label}）"
-    logger.warning(msg)
-    bus.log(cur.account_id, msg, level="warn")
-    _kill_tree(cur.pid)
-    bus.log(cur.account_id, "已强制停止浏览器进程", level="warn")
-    bus.status(cur.account_id, "stopped", "已强制停止")
-    with _lock:
-        if _active is cur:
-            _active = None
+    for cur in targets:
+        tip = f"账号 {account_label(cur.account_id)}" if cur.account_id is not None else "任务"
+        msg = f"手动强制停止（{tip}·{cur.label}）"
+        logger.warning(msg)
+        bus.log(cur.account_id, msg, level="warn")
+        _kill_tree(cur.pid)
+        bus.log(cur.account_id, "已强制停止浏览器进程", level="warn")
+        bus.status(cur.account_id, "stopped", "已强制停止")
     return True

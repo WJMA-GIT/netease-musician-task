@@ -23,8 +23,8 @@ const escapeHtml = (s) =>
 // ---------- 运行日志弹窗 ----------
 // 当前「运行日志」弹窗正在查看的账号；WS 日志按此过滤显示
 let viewingAccountId = null;
-// 当前正在运行浏览器的账号（用于把「执行」按钮切成「查看」）
-let runningAccountId = null;
+// 当前正在运行浏览器的账号（支持多账号并发）
+let runningAccountIds = new Set();
 
 function openRunModal(title, accountId) {
   $("#run-title").textContent = title;
@@ -125,10 +125,10 @@ function handleEvent(msg) {
     const startStates = ["logging_in", "running", "secondary"];
     const endStates = ["done", "stopped", "login_ok", "login_fail"];
     if (startStates.includes(msg.status)) {
-      runningAccountId = acc;
+      runningAccountIds.add(acc);
       loadAccounts();
     } else if (endStates.includes(msg.status)) {
-      if (runningAccountId === acc) runningAccountId = null;
+      runningAccountIds.delete(acc);
       loadAccounts();
     }
   }
@@ -149,7 +149,7 @@ async function loadAccounts() {
     const runTime = a.run_time
       ? escapeHtml(a.run_time)
       : `${escapeHtml(globalSendTime)} <span class="tag-global">全局</span>`;
-    const running = runningAccountId === a.id;
+    const running = runningAccountIds.has(a.id);
     const actionBtn = running
       ? `<button class="btn btn-sm btn-view" data-act="view" data-id="${a.id}" data-phone="${escapeHtml(a.phone)}">查看</button>`
       : `<button class="btn btn-sm" data-act="run" data-id="${a.id}" data-phone="${escapeHtml(a.phone)}" data-role="${a.account_role || "musician"}">执行</button>`;
@@ -194,7 +194,9 @@ async function refreshGlobalSendTime() {
 async function refreshActiveAndList() {
   try {
     const data = await api("/api/tasks/active");
-    runningAccountId = data.active ? Number(data.active.account_id) : null;
+    runningAccountIds = new Set(
+      (data.actives || (data.active ? [data.active] : [])).map((item) => Number(item.account_id)),
+    );
   } catch (e) {
     /* ignore */
   }
@@ -245,7 +247,7 @@ $("#btn-confirm-login").addEventListener("click", async () => {
   try {
     $("#modal-login").classList.add("hidden");
     openRunModal(`账号 ${phone} 登录中`, id);
-    runningAccountId = Number(id);
+    runningAccountIds.add(Number(id));
     loadAccounts();
     await api(`/api/login/${id}`, { method: "POST" });
   } catch (err) {
@@ -276,7 +278,7 @@ $("#btn-confirm-run").addEventListener("click", async () => {
   try {
     $("#modal-run-select").classList.add("hidden");
     openRunModal(`账号 ${phone} 执行任务`, id);
-    runningAccountId = Number(id);
+    runningAccountIds.add(Number(id));
     loadAccounts();
     await api(`/api/tasks/${id}/run`, {
       method: "POST",
@@ -340,7 +342,7 @@ $("#btn-save-add").addEventListener("click", async () => {
     });
     $("#modal-add").classList.add("hidden");
     openRunModal(`账号 ${phone} 登录中`, acc.id);
-    runningAccountId = Number(acc.id);
+    runningAccountIds.add(Number(acc.id));
     await loadAccounts();
     await api(`/api/login/${acc.id}`, { method: "POST" });
   } catch (err) {
@@ -462,6 +464,26 @@ $("#btn-save-settings").addEventListener("click", async () => {
 $("#btn-logout").addEventListener("click", async () => {
   try { await api("/api/auth/logout", { method: "POST" }); } catch (_) {}
   location.href = "/login";
+});
+
+$("#btn-listen-all").addEventListener("click", async () => {
+  try {
+    const res = await api("/api/tasks/local-listen/start-all", { method: "POST" });
+    alert(res.message);
+    await refreshActiveAndList();
+  } catch (err) {
+    alert("启动失败：" + err.message);
+  }
+});
+
+$("#btn-stop-listen-all").addEventListener("click", async () => {
+  try {
+    const res = await api("/api/tasks/local-listen/stop-all", { method: "POST" });
+    alert(res.message);
+    await refreshActiveAndList();
+  } catch (err) {
+    alert("停止失败：" + err.message);
+  }
 });
 
 $("#btn-clear-log").addEventListener("click", () => {
