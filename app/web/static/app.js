@@ -178,7 +178,7 @@ async function loadAccounts() {
     tr.innerHTML = `
       <td data-label="账号" class="account-cell">
         <div class="account-content">
-          <button type="button" class="drag-handle" title="长按拖动排序" aria-label="长按拖动账号排序">⠿</button>
+          <button type="button" class="drag-handle" title="按住拖动排序" aria-label="按住拖动账号排序"></button>
           <div class="account-info"><strong>${escapeHtml(a.phone)}</strong><span>${escapeHtml(a.nickname || "未设置昵称")}</span></div>
         </div>
       </td>
@@ -221,7 +221,6 @@ async function persistAccountOrder() {
 }
 
 function finishAccountDrag(save = false) {
-  if (dragPress) clearTimeout(dragPress.timer);
   dragPress = null;
   if (!draggedRow) return;
   draggedRow.classList.remove("dragging");
@@ -232,33 +231,20 @@ function finishAccountDrag(save = false) {
 }
 
 $("#acc-body").addEventListener("pointerdown", (event) => {
-  const accountCell = event.target.closest(".account-cell");
-  if (!accountCell || event.button > 0) return;
+  const handle = event.target.closest(".drag-handle");
+  if (!handle || event.button > 0) return;
   event.preventDefault();
   finishAccountDrag();
-  const row = accountCell.closest("tr[data-account-id]");
-  dragPress = {
-    pointerId: event.pointerId,
-    startX: event.clientX,
-    startY: event.clientY,
-    timer: setTimeout(() => {
-      draggedRow = row;
-      draggingAccount = true;
-      row.classList.add("dragging");
-      document.body.classList.add("account-dragging");
-      accountCell.setPointerCapture?.(event.pointerId);
-    }, 350),
-  };
+  draggedRow = handle.closest("tr[data-account-id]");
+  dragPress = { pointerId: event.pointerId };
+  draggingAccount = true;
+  draggedRow.classList.add("dragging");
+  document.body.classList.add("account-dragging");
+  handle.setPointerCapture?.(event.pointerId);
 });
 
 document.addEventListener("pointermove", (event) => {
   if (!dragPress || event.pointerId !== dragPress.pointerId) return;
-  if (!draggedRow) {
-    if (Math.hypot(event.clientX - dragPress.startX, event.clientY - dragPress.startY) > 8) {
-      finishAccountDrag();
-    }
-    return;
-  }
   event.preventDefault();
   const body = $("#acc-body");
   const before = [...body.querySelectorAll("tr[data-account-id]:not(.dragging)")]
@@ -273,7 +259,7 @@ document.addEventListener("pointercancel", (event) => {
   if (dragPress && event.pointerId === dragPress.pointerId) finishAccountDrag();
 });
 $("#acc-body").addEventListener("contextmenu", (event) => {
-  if (event.target.closest(".account-cell")) event.preventDefault();
+  if (event.target.closest(".drag-handle")) event.preventDefault();
 });
 
 $("#acc-body").addEventListener("keydown", (event) => {

@@ -192,11 +192,6 @@ body {
   gap: 10px;
 }
 
-.account-cell {
-  cursor: grab;
-  touch-action: none;
-}
-
 .account-info {
   min-width: 0;
 }
@@ -241,29 +236,48 @@ body {
 }
 
 .drag-handle {
+  position: relative;
   flex: 0 0 auto;
-  width: 22px;
-  height: 30px;
+  width: 30px;
+  height: 34px;
   border: 0;
+  border-radius: 8px;
   color: var(--muted);
   background: transparent;
   cursor: grab;
-  font-size: 18px;
-  line-height: 1;
   touch-action: none;
+  transition: color .15s, background .15s, transform .15s;
+}
+
+.drag-handle::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  left: 9px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 8px 0 currentColor, 0 7px currentColor, 8px 7px currentColor,
+    0 14px currentColor, 8px 14px currentColor;
 }
 
 .drag-handle:hover,
 .drag-handle:focus-visible {
   color: var(--primary);
+  background: rgba(47, 111, 235, .12);
   outline: none;
 }
+
+.drag-handle:active { cursor: grabbing; transform: scale(.94); }
 
 .tbl tr.dragging {
   position: relative;
   z-index: 2;
   background: #edf4ff;
   box-shadow: 0 8px 24px rgba(47, 111, 235, .2);
+  transform: scale(1.01);
+  transition: background .15s, box-shadow .15s, transform .15s;
 }
 
 .account-dragging {
