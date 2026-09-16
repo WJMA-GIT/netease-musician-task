@@ -1,14 +1,46 @@
-log/
-__pycache__/
-*.pyc
-.idea/
-.playwright_profiles/
-*/.playwright_profile_netease
-debug/
-test/
-.claude/
+# 本地配置与密钥
 .env
-.vscode
+.env.*
+!.env.example
+*.local
+
+# Python 缓存、虚拟环境与测试产物
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# 运行期数据
 app/data/
-.DS_store
-*/.DS_store
+data/
+log/
+logs/
+*.log
+*.db
+*.db-shm
+*.db-wal
+debug/
+screenshots/
+.playwright_profiles/
+**/.playwright_profile_netease/
+playwright-report/
+test-results/
+
+# 编辑器、助手与系统文件
+.idea/
+.vscode/
+.claude/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# 临时文件
+*.tmp
+*.temp
+*.bak
+*~
