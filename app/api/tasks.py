@@ -74,20 +74,30 @@ def logs(account_id: int | None = None, limit: int = 100) -> list[dict]:
     return repo.list_logs(account_id, limit)
 
 
+@router.delete("/logs")
+def clear_logs() -> dict:
+    from app.event_bus import bus
+
+    deleted = repo.clear_logs()
+    bus.clear_buffers()
+    return {"ok": True, "deleted": deleted, "message": f"已清除 {deleted} 条历史日志"}
+
+
 @router.get("/active")
 def active() -> dict:
     """返回全部活动账号，兼容保留 active 单值。"""
     from app import runner
     from app.browser import registry
 
+    continuous = runner.continuous_local_listen_account_ids()
     infos = registry.active_infos()
     known = {info["account_id"] for info in infos}
     infos.extend(
         {"account_id": account_id, "label": "持续播放", "pid": None}
-        for account_id in runner.continuous_local_listen_account_ids()
+        for account_id in continuous
         if account_id not in known
     )
-    return {"active": infos[0] if infos else None, "actives": infos}
+    return {"active": infos[0] if infos else None, "actives": infos, "continuous": continuous}
 
 
 @router.get("/{account_id}/live")

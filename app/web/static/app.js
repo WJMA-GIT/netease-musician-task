@@ -25,6 +25,9 @@ const escapeHtml = (s) =>
 let viewingAccountId = null;
 // 当前正在运行浏览器的账号（支持多账号并发）
 let runningAccountIds = new Set();
+// 「一键播放」启动的持续播放账号
+let continuousListeningIds = new Set();
+let activeRefreshVersion = 0;
 
 function openRunModal(title, accountId) {
   $("#run-title").textContent = title;
@@ -120,16 +123,19 @@ function handleEvent(msg) {
       appendLog(msg.ts, `【状态】${msg.status} ${msg.detail || ""}`, "info");
       if (msg.status === "login_ok") hideQR();
     }
-    // 运行态变化 → 直接信任 WS 消息更新按钮（不走 /active，避免与 registry 登记时机竞态）
-    const acc = Number(msg.account_id);
     const startStates = ["logging_in", "running", "secondary"];
     const endStates = ["done", "stopped", "login_ok", "login_fail"];
+    const accountId = Number(msg.account_id);
     if (startStates.includes(msg.status)) {
-      runningAccountIds.add(acc);
+      runningAccountIds.add(accountId);
+      if (msg.detail === "持续播放已启动") continuousListeningIds.add(accountId);
+      syncListenButtons();
       loadAccounts();
+      // running 事件可能早于浏览器进程登记，稍后以后端状态校准。
+      setTimeout(refreshActiveAndList, 300);
     } else if (endStates.includes(msg.status)) {
-      runningAccountIds.delete(acc);
-      loadAccounts();
+      // login_fail 等也可能是持续播放的中间状态，不能直接移除。
+      setTimeout(refreshActiveAndList, 300);
     }
   }
 }
@@ -157,8 +163,11 @@ async function loadAccounts() {
       ? ""
       : `<button class="btn btn-sm" data-act="history" data-id="${a.id}" data-phone="${escapeHtml(a.phone)}">日志</button>`;
     const enabled = !!a.enabled;
+    const activityBadge = continuousListeningIds.has(a.id)
+      ? `<span class="badge running">正在播放</span> `
+      : running ? `<span class="badge running">运行中</span> ` : "";
     const enabledBadge = enabled
-      ? `<span class="badge ok">启用</span> <span class="badge unknown">${a.account_role === "player" ? "普通播放" : "音乐人"}</span>`
+      ? `${activityBadge}<span class="badge ok">启用</span> <span class="badge unknown">${a.account_role === "player" ? "普通播放" : "音乐人"}</span>`
       : `<span class="badge expired">暂停</span>`;
     const toggleBtn = `<button class="btn btn-sm" data-act="toggle" data-id="${a.id}" data-enabled="${enabled ? 1 : 0}">${enabled ? "暂停" : "启用"}</button>`;
     const tr = document.createElement("tr");
@@ -171,7 +180,7 @@ async function loadAccounts() {
       <td data-label="本月发布">${a.monthly_sends || 0}</td>
       <td data-label="本地互助（今日）">${a.local_listen_enabled ? `帮助 ${a.local_listen_helped_today || 0} / 被帮助 ${a.local_listen_received_today || 0}` : "未加入"}</td>
       <td data-label="操作" class="cell-actions">
-        <button class="btn btn-sm btn-primary" data-act="login" data-id="${a.id}" data-phone="${escapeHtml(a.phone)}">登录</button>
+        <button class="btn btn-sm btn-primary" data-act="login" data-id="${a.id}" data-phone="${escapeHtml(a.phone)}" ${running ? "disabled" : ""}>登录</button>
         ${actionBtn}
         ${historyBtn}
         ${toggleBtn}
@@ -192,15 +201,28 @@ async function refreshGlobalSendTime() {
 }
 
 async function refreshActiveAndList() {
+  const version = ++activeRefreshVersion;
   try {
     const data = await api("/api/tasks/active");
+    if (version !== activeRefreshVersion) return;
     runningAccountIds = new Set(
       (data.actives || (data.active ? [data.active] : [])).map((item) => Number(item.account_id)),
     );
+    continuousListeningIds = new Set((data.continuous || []).map(Number));
   } catch (e) {
     /* ignore */
   }
+  if (version !== activeRefreshVersion) return;
+  syncListenButtons();
   await loadAccounts();
+}
+
+function syncListenButtons() {
+  const playing = continuousListeningIds.size > 0;
+  const start = $("#btn-listen-all");
+  start.textContent = playing ? `正在播放（${continuousListeningIds.size}）` : "一键播放";
+  start.disabled = playing;
+  $("#btn-stop-listen-all").disabled = !playing;
 }
 
 $("#acc-body").addEventListener("click", async (e) => {
@@ -251,6 +273,8 @@ $("#btn-confirm-login").addEventListener("click", async () => {
     loadAccounts();
     await api(`/api/login/${id}`, { method: "POST" });
   } catch (err) {
+    runningAccountIds.delete(Number(id));
+    loadAccounts();
     appendLog("", "启动登录失败：" + err.message, "error");
   }
 });
@@ -285,6 +309,8 @@ $("#btn-confirm-run").addEventListener("click", async () => {
       body: JSON.stringify({ tasks }),
     });
   } catch (err) {
+    runningAccountIds.delete(Number(id));
+    loadAccounts();
     appendLog("", "启动失败：" + err.message, "error");
   }
 });
@@ -335,17 +361,21 @@ $("#btn-save-add").addEventListener("click", async () => {
     alert("请填写手机号和密码");
     return;
   }
+  let createdId = null;
   try {
     const acc = await api("/api/accounts", {
       method: "POST",
       body: JSON.stringify({ phone, password, run_time, account_role }),
     });
+    createdId = Number(acc.id);
     $("#modal-add").classList.add("hidden");
     openRunModal(`账号 ${phone} 登录中`, acc.id);
     runningAccountIds.add(Number(acc.id));
     await loadAccounts();
     await api(`/api/login/${acc.id}`, { method: "POST" });
   } catch (err) {
+    if (createdId != null) runningAccountIds.delete(createdId);
+    loadAccounts();
     alert("创建失败：" + err.message);
   }
 });
@@ -467,22 +497,42 @@ $("#btn-logout").addEventListener("click", async () => {
 });
 
 $("#btn-listen-all").addEventListener("click", async () => {
+  const button = $("#btn-listen-all");
+  button.disabled = true;
+  button.textContent = "启动中...";
   try {
     const res = await api("/api/tasks/local-listen/start-all", { method: "POST" });
     alert(res.message);
-    await refreshActiveAndList();
   } catch (err) {
     alert("启动失败：" + err.message);
+  } finally {
+    await refreshActiveAndList();
   }
 });
 
 $("#btn-stop-listen-all").addEventListener("click", async () => {
+  const button = $("#btn-stop-listen-all");
+  button.disabled = true;
+  button.textContent = "停止中...";
   try {
     const res = await api("/api/tasks/local-listen/stop-all", { method: "POST" });
     alert(res.message);
-    await refreshActiveAndList();
   } catch (err) {
     alert("停止失败：" + err.message);
+  } finally {
+    button.textContent = "停止播放";
+    await refreshActiveAndList();
+  }
+});
+
+$("#btn-clear-all-logs").addEventListener("click", async () => {
+  if (!confirm("确认清除所有账号的历史日志？此操作不可撤销。")) return;
+  try {
+    const res = await api("/api/tasks/logs", { method: "DELETE" });
+    alert(res.message);
+    if (viewingAccountId != null) $("#log-box").innerHTML = "";
+  } catch (err) {
+    alert("清除失败：" + err.message);
   }
 });
 

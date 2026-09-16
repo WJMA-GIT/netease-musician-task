@@ -149,6 +149,13 @@ def list_logs(account_id: Optional[int] = None, limit: int = 100) -> list[dict[s
         return [dict(r) for r in rows]
 
 
+def clear_logs() -> int:
+    """清空全部账号的历史日志，返回删除条数。"""
+    with db() as conn:
+        cur = conn.execute("DELETE FROM task_logs")
+        return int(cur.rowcount or 0)
+
+
 def cleanup_logs(retention_days: int) -> int:
     """删除超过保留天数的任务和实时执行日志，返回删除条数。"""
     days = max(1, int(retention_days))

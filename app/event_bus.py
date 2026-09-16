@@ -58,6 +58,10 @@ class EventBus:
             self._buffers.pop(account_id, None)
             self._qr.pop(account_id, None)
 
+    def clear_buffers(self) -> None:
+        with self._buf_lock:
+            self._buffers.clear()
+
     # ---- 发布端（可在任意线程调用）----
     def publish(self, event_type: str, payload: dict[str, Any]) -> None:
         msg = {

@@ -217,6 +217,16 @@ body {
   color: #8a9099;
 }
 
+.badge.running {
+  background: #e8f0ff;
+  color: var(--primary);
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: .65;
+}
+
 /* 弹窗 */
 .modal {
   position: fixed;
