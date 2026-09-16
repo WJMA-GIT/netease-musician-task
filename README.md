@@ -34,14 +34,14 @@ docker compose up -d --build
 
 ```bash
 # 1. 拉取镜像（支持 amd64 和 arm64 架构）
-docker pull xinghehy/netease-musician-task:latest
+docker pull mawjgit/netease-musician-task:latest
 
 # 2. 运行容器（数据持久化到 ./app/data）
 docker run -d --name netease-musician-task \
   -p 8000:8000 \
   -v "$(pwd)/app/data:/app/app/data" \
   --restart always \
-  xinghehy/netease-musician-task:latest
+  mawjgit/netease-musician-task:latest
 ```
 
 ### 本地运行
@@ -146,6 +146,11 @@ app/
 
 ## 更新日志
 
+### v2.0.8
+- 支持全部启用账号并发持续播放，可一键开始并手动停止
+- 不同账号独立运行、同一账号串行，避免浏览器 profile 冲突
+- 单账号播放失败后自动重新开始，不影响其他账号
+- Docker 镜像发布到 `mawjgit/netease-musician-task`，支持 `amd64` / `arm64`
 
 ### v2.0.7
 - 修复登录接口未知响应被误判为失败的问题，仅拦截明确的密码错误
@@ -189,7 +194,7 @@ app/
 ## 友情链接
 
 - [LINUX DO 社区](https://linux.do)
-- [Docker Hub 镜像仓库](https://hub.docker.com/r/xinghehy/netease-musician-task)
+- [Docker Hub 镜像仓库](https://hub.docker.com/r/mawjgit/netease-musician-task)
 
 ## 免责声明
 
